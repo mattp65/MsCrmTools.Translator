@@ -2,6 +2,7 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Query;
 using MsCrmTools.Translator.AppCode;
 using OfficeOpenXml;
 using System;
@@ -20,14 +21,31 @@ namespace MsCrmTools.Translator
 
         public void Export(ExportSettings settings, IOrganizationService service, BackgroundWorker worker = null)
         {
-            // Loading available languages
-            if (worker != null && worker.WorkerReportsProgress)
+            List<int> lcids;
+            if (settings.LanguageToExport != -1)
             {
-                worker.ReportProgress(0, "Loading provisioned languages...");
+                if (worker != null && worker.WorkerReportsProgress)
+                {
+                    worker.ReportProgress(0, "Loading environment base language...");
+                }
+                var baseLanguageCode = service.RetrieveMultiple(new QueryExpression("organization")
+                {
+                    ColumnSet = new ColumnSet("languagecode")
+                }).Entities.First().GetAttributeValue<int>("languagecode");
+
+                lcids = new List<int> { baseLanguageCode, settings.LanguageToExport }.Distinct().ToList();
             }
-            var lcidRequest = new RetrieveProvisionedLanguagesRequest();
-            var lcidResponse = (RetrieveProvisionedLanguagesResponse)service.Execute(lcidRequest);
-            var lcids = lcidResponse.RetrieveProvisionedLanguages.Select(lcid => lcid).ToList();
+            else
+            {
+                // Loading available languages
+                if (worker != null && worker.WorkerReportsProgress)
+                {
+                    worker.ReportProgress(0, "Loading provisioned languages...");
+                }
+                var lcidRequest = new RetrieveProvisionedLanguagesRequest();
+                var lcidResponse = (RetrieveProvisionedLanguagesResponse)service.Execute(lcidRequest);
+                lcids = lcidResponse.RetrieveProvisionedLanguages.Select(lcid => lcid).ToList();
+            }
 
             // Loading entities
             var emds = new List<EntityMetadata>();
@@ -225,6 +243,7 @@ namespace MsCrmTools.Translator
                 var emds = new List<EntityMetadata>();
 
                 var forms = new List<Entity>();
+                var dashboards = new List<Entity>();
                 var ft = new FormTranslation();
                 ft.Log += Engine_Log;
                 ft.Result += Engine_OnResult;
@@ -435,17 +454,17 @@ namespace MsCrmTools.Translator
                                 break;
 
                             case "Dashboards Tabs":
-                                db.PrepareFormTabs(sheet, service, forms);
+                                db.PrepareFormTabs(sheet, service, dashboards);
                                 hasDashboardContent = true;
                                 break;
 
                             case "Dashboards Sections":
-                                db.PrepareFormSections(sheet, service, forms);
+                                db.PrepareFormSections(sheet, service, dashboards);
                                 hasDashboardContent = true;
                                 break;
 
                             case "Dashboards Fields":
-                                db.PrepareFormLabels(sheet, service, forms);
+                                db.PrepareFormLabels(sheet, service, dashboards);
                                 hasDashboardContent = true;
                                 break;
 
@@ -502,7 +521,7 @@ namespace MsCrmTools.Translator
                         Overall = overallProgress == 0 ? 1 : overallProgress * 100 / count
                     });
 
-                    db.ImportFormsContent(service, forms, worker);
+                    db.ImportFormsContent(service, dashboards, worker);
                 }
 
                 if (hasSiteMapContent)
